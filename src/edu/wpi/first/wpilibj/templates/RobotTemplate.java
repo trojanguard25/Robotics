@@ -20,7 +20,14 @@ import edu.wpi.first.wpilibj.SimpleRobot;
 import edu.wpi.first.wpilibj.Solenoid;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.Victor;
-
+import edu.wpi.first.wpilibj.DoubleSolenoid;
+import edu.wpi.first.wpilibj.camera.AxisCamera;
+import edu.wpi.first.wpilibj.image.BinaryImage;
+import edu.wpi.first.wpilibj.image.ColorImage;
+import edu.wpi.first.wpilibj.image.CriteriaCollection;
+import edu.wpi.first.wpilibj.image.NIVision;
+import edu.wpi.first.wpilibj.image.NIVisionException;
+import edu.wpi.first.wpilibj.image.ParticleAnalysisReport;
 
 public class RobotTemplate extends SimpleRobot {
 
@@ -72,10 +79,8 @@ public class RobotTemplate extends SimpleRobot {
     Victor loader = new Victor(6);
     
     
-    Compressor compressor = new Compressor(2,5,2,5);
-    Solenoid solenoid = new Solenoid(3,2);
-    Solenoid solenoid2 = new Solenoid(3,3);
-    
+    Compressor compressor1 = new Compressor(14,1);
+    DoubleSolenoid DS = new DoubleSolenoid (2, 3);
     /*
      * Sonar declaration
      *      *Note* sonar is declared as an AnalogChannel because the sonar
@@ -101,7 +106,8 @@ public class RobotTemplate extends SimpleRobot {
      * This is the declaration of the all the variabels that are used with the
      * spike relay
      */
-    Relay relay = new Relay(5);
+    Relay relay = new Relay(2);
+    
     public boolean driveMode = true;
     //this counter will prevent the printing screen from flashing as much
     private int counter = 0;
@@ -139,8 +145,16 @@ public class RobotTemplate extends SimpleRobot {
     
     boolean isShooterEnabled=false;
     boolean isLoaderEnabled=false;
-
-
+    boolean isShooting=false;
+    
+    final double pixelsT = 640;
+    final double visionR = 47*Math.PI/180;
+    final double lengthG = 36/2;
+    final double desiredDistance = 60;
+    
+    
+    AxisCamera camera = AxisCamera.getInstance();
+    CriteriaCollection cc;
 
     /*
      * This is automatically called at the beginning of the competition
@@ -151,6 +165,10 @@ public class RobotTemplate extends SimpleRobot {
         firstEncoder.start();
         secondEncoder.setDistancePerPulse(.004);
         secondEncoder.start();
+        
+        cc = new CriteriaCollection();
+        cc.addCriteria(NIVision.MeasurementType.IMAQ_MT_BOUNDING_RECT_WIDTH, 30, 400, false);
+        cc.addCriteria(NIVision.MeasurementType.IMAQ_MT_BOUNDING_RECT_HEIGHT, 40, 400, false);
         timer.start();
     }
 
@@ -170,24 +188,25 @@ public class RobotTemplate extends SimpleRobot {
         while (isAutonomous() && isEnabled()) {
             encoder1 = firstEncoder.get();
             encoder2 = secondEncoder.get();
-            shooter.tankDrive(-1, 1);
-            shootHeight();
-            if(timer.get() > 4.0)
-            {
-                loader.set(.3);
-                isLoaderEnabled=true;
-            }
+//            shooter.tankDrive(-1, 1);
+//            shootHeight();
+//            if(timer.get() > 4.0)
+//            {
+//                loader.set(.3);
+//                isLoaderEnabled=true;
+//            }
             /*else{
                 loader.set(0);
                 isLoaderEnabled=false;
             }*/
+            relay.set(Relay.Value.kForward); 
+            centerCalculate();
+            print();
         }
         shooter.tankDrive(0, 0);
     }
     
     
-    
-
     /*
      * Called durring autonomous to control the robot
      */
@@ -205,16 +224,26 @@ public class RobotTemplate extends SimpleRobot {
         climb.setSafetyEnabled(true);
         chassis.setSafetyEnabled(true);
         loader.setSafetyEnabled(true);
-
+        relay.set(Relay.Value.kForward);
+         
         while (isOperatorControl() && isEnabled()) {
+               
+                compressor1.start();
+                if (climbing1.getTrigger()){
+                    DS.set(DoubleSolenoid.Value.kForward);
+                } else {
+                    DS.set(DoubleSolenoid.Value.kReverse);
+                }
+              if (climbing1.getRawButton(8)){
+                relay.set(Relay.Value.kForward); 
+              }  else if (climbing1.getRawButton(9)){
+                  relay.set(Relay.Value.kOff);
+              }
+              
             
-             if(compressor.getPressureSwitchValue()){
-                compressor.start();
-            } else{
-                compressor.stop();
-            }
-
+               
             chassis.tankDrive((-1) * chassis1.getAxis(Joystick.AxisType.kY), (-1) * chassis2.getAxis(Joystick.AxisType.kY));
+//            compressor1.start();
 
             limitSwitchCheck();
             cameraControl();
@@ -336,22 +365,32 @@ public class RobotTemplate extends SimpleRobot {
 
     public void shooting() {
         if (climbing1.getRawButton(11)) {
-            shooter.tankDrive(-1, 1);
+            isShooting=true;
         }
         else if(climbing1.getRawButton(10)){
+            isShooting=false;
+            
+        }
+        
+        if(isShooting)
+        {
+            shooter.tankDrive(-1, 1);
+        }
+        else
+        {
             shooter.tankDrive(0,0);
         }
     }
 
     public void loader() {
-        if (climbing1.getRawButton(6)) {
-            solenoid.set(true);
-            solenoid2.set(false);
-        } else {
-            solenoid.set(false);
-            solenoid2.set(true);
-            isLoaderEnabled=false;
-        }
+//        if(climbing1.getRawButton(7)){
+//            relay.set(Relay.Value.kOn);
+//        }
+//        else{
+//            relay.set(Relay.Value.kOff);
+//        }
+//        
+//        
     }
 
     public void encoder() {
@@ -381,12 +420,12 @@ public class RobotTemplate extends SimpleRobot {
             counter = 0;
         }
 
-        robot.println(DriverStationLCD.Line.kUser1, 1, "Lower(1): " + encoder1);
-        robot.println(DriverStationLCD.Line.kUser2, 1, "Upper(2): " + encoder2);
+        robot.println(DriverStationLCD.Line.kUser1, 1, "Solenoid: " + DS.get());
+        robot.println(DriverStationLCD.Line.kUser2, 1, "pv: "+compressor1.getPressureSwitchValue());
         robot.println(DriverStationLCD.Line.kUser3, 1, "Loading: " + isLoaderEnabled);
         robot.println(DriverStationLCD.Line.kUser4, 1, "Shooting: "+shooter.isAlive());
         robot.println(DriverStationLCD.Line.kUser5, 1, "Timer: "+timer.get());
-        robot.println(DriverStationLCD.Line.kUser6, 1, "");
+       // robot.println(DriverStationLCD.Line.kUser6, 1, "");
         robot.updateLCD();
     }
 
@@ -409,22 +448,22 @@ public class RobotTemplate extends SimpleRobot {
     
     
     public void handleEncoderPresets() {
-        if(climbing2.getRawButton(6)||chassis2.getRawButton(6)) {
-            loadHeight();
-        }
-        else if(climbing2.getRawButton(7)||chassis2.getRawButton(7)) {
-            shootHeight();
-        }
-        else if(climbing2.getRawButton(11)||chassis2.getRawButton(11)) {
-            climbHeight();
-        }
-        else if((climbing1.getRawButton(8)&&climbing2.getRawButton(8)) || (chassis1.getRawButton(8)&&chassis2.getRawButton(8))) {
-            adjustZero=true;
-            moveToZero();
-        }
-        else if(climbing2.getRawButton(10)||chassis2.getRawButton(10)) {
-            blockingHeight();
-        }
+//        if(climbing2.getRawButton(6)||chassis2.getRawButton(6)) {
+//            loadHeight();
+//        }
+//        else if(climbing2.getRawButton(7)||chassis2.getRawButton(7)) {
+//            shootHeight();
+//        }
+//        else if(climbing2.getRawButton(11)||chassis2.getRawButton(11)) {
+//            climbHeight();
+//        }
+//        else if((climbing1.getRawButton(8)&&climbing2.getRawButton(8)) || (chassis1.getRawButton(8)&&chassis2.getRawButton(8))) {
+//            adjustZero=true;
+//            moveToZero();
+//        }
+//        else if(climbing2.getRawButton(10)||chassis2.getRawButton(10)) {
+//            blockingHeight();
+//        }
     }
     
     
@@ -549,6 +588,66 @@ public class RobotTemplate extends SimpleRobot {
             atPosition = true;
         }
         
+    }
+
+    private void centerCalculate() {
+        ColorImage image = null;
+        //BinaryImage thresholdRGBImage = null;
+        BinaryImage thresholdHSIImage = null;
+        BinaryImage bigObjectsImage= null;
+        BinaryImage convexHullImage=null;
+        BinaryImage filteredImage = null;
+        
+        try {
+            image = camera.getImage();
+            camera.writeBrightness(50);
+            //image.write("originalImage.jpg");
+            //thresholdRGBImage = image.thresholdRGB(0, 45, 25, 255, 0, 47);
+            //thresholdRGBImage.write("thresholdRGBImage.bmp");
+            thresholdHSIImage = image.thresholdHSI(0, 255, 0, 255, 200, 255);
+            //thresholdHSIImage.write("thresholdHSIImage.bmp");
+            bigObjectsImage = thresholdHSIImage.removeSmallObjects(false, 2);
+            //bigObjectsImage.write("bigObjectsImage.bmp");
+            convexHullImage = bigObjectsImage.convexHull(false);
+            //convexHullImage.write("convexHullImage.bmp");
+            filteredImage = convexHullImage.particleFilter(cc);
+            //filteredImage.write("filteredImage.bmp");
+            ParticleAnalysisReport[] reports = filteredImage.getOrderedParticleAnalysisReports();
+            String output;
+//            for(int i = 0; i<reports.length+1; i++) {
+//                robot.println(DriverStationLCD.Line.kUser6, 1, ""+reports[i].center_mass_x);
+//                System.out.println(reports[i].center_mass_x);
+//            }
+            double pixelsM = reports[0].boundingRectWidth;
+            double angle = pixelsM/pixelsT*visionR;
+            double distance = lengthG/Math.tan(angle/2);
+            
+            robot.println(DriverStationLCD.Line.kUser6, 1, ""+distance);
+            if(Math.abs(distance-desiredDistance)>6){
+                if(distance < desiredDistance){
+                    chassis.tankDrive(-.5, -.5);
+                }
+                else if(distance>desiredDistance){
+                    chassis.tankDrive(.5, .5);
+                }
+            } 
+            else
+                chassis.tankDrive(0, 0);
+            
+            
+        }catch (Exception ex) {
+        }finally{
+        }
+        try {
+            filteredImage.free();
+            convexHullImage.free();
+            bigObjectsImage.free();
+            //thresholdRGBImage.free();
+            thresholdHSIImage.free();
+            image.free();
+        } catch (NIVisionException ex) {
+            ex.printStackTrace();
+        }
     }
 }
 /*
