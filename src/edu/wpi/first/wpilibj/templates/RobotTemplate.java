@@ -619,21 +619,33 @@ public class RobotTemplate extends SimpleRobot {
 //                System.out.println(reports[i].center_mass_x);
 //            }
             double pixelsM = reports[0].boundingRectWidth;
+            double centerX = reports[0].center_mass_x_normalized;
+            double centerY = reports[0].center_mass_y_normalized;
+            double targetAngle = 47*(centerX);
             double angle = pixelsM/pixelsT*visionR;
             double distance = lengthG/Math.tan(angle/2);
             
-            robot.println(DriverStationLCD.Line.kUser6, 1, ""+distance);
-            if(Math.abs(distance-desiredDistance)>6){
-                if(distance < desiredDistance){
-                    chassis.tankDrive(-.5, -.5);
-                }
-                else if(distance>desiredDistance){
-                    chassis.tankDrive(.5, .5);
-                }
-            } 
-            else
-                chassis.tankDrive(0, 0);
+            robot.println(DriverStationLCD.Line.kUser6, 1, ""+targetAngle);
             
+            if(Math.abs(targetAngle) > 10){
+                if(targetAngle>0){
+                    chassis.tankDrive(.75, -.75);
+                }
+                else{
+                    chassis.tankDrive(-.75, .75);
+                }
+            }else{
+                if(Math.abs(distance-desiredDistance)>6){
+                    if(distance < desiredDistance){
+                        chassis.tankDrive(-.4, -.4);
+                    }
+                    else if(distance>desiredDistance){
+                        chassis.tankDrive(.4, .4);
+                    }
+                } 
+                else
+                    chassis.tankDrive(0, 0);
+            }
             
         }catch (Exception ex) {
         }finally{
